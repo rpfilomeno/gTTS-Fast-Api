@@ -1,3 +1,7 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+#dependencies = ["uvicorn","fastapi","gtts", "pygame"]
+# ///
 import os
 import io
 import sys

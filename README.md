@@ -2,8 +2,17 @@
 
 gTTS playback on your computer via API with queing, best use for AI agents that would update you automously. 
 
+## Install Uv
+See https://docs.astral.sh/
 
-Design consideration: Not using concurrent requst to google to avoid being blocked.
+## Running the server with UV installed:
+
+``bash
+uv run tts-server.py
+
+``
+## APi request
+
 
 ``curl
 
