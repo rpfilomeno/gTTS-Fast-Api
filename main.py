@@ -6,6 +6,12 @@ from gtts import gTTS
 from playsound import playsound
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
+from requests.exceptions import RequestException
+
+# A global queue to hold the text strings to be spoken.
+text_queue = []
+# A lock to ensure thread-safe access to the queue.
+queue_lock = threading.Lock()
 
 
 
@@ -38,14 +44,9 @@ async def queue(request: Request):
     
 
 
-from playsound import playsound
 
-# A global queue to hold the text strings to be spoken.
-text_queue = []
-# A lock to ensure thread-safe access to the queue.
-queue_lock = threading.Lock()
 
-def play_text_to_speech(text: str):
+def play_text_to_speech(text: str, max_retries=120, delay_seconds=30):
     """
     Converts text to speech and plays the audio directly on the speaker.
 
@@ -54,35 +55,43 @@ def play_text_to_speech(text: str):
     """
     # Use an in-memory buffer to store the audio data.
     audio_buffer = io.BytesIO()
-    
-    try:
-        # Create a gTTS object.
-        tts = gTTS(text=text, lang='en')
-        tts.write_to_fp(audio_buffer)
+    for attempt in range(max_retries):
 
-        # To play the audio, we need to save it to a temporary file.
-        temp_file_path = os.path.join(os.path.realpath(os.path.dirname(__file__)), 'temp_audio.mp3') 
-        
-        # Rewind the buffer to the beginning.
-        audio_buffer.seek(0)
+        try:
+            # Create a gTTS object.
+            tts = gTTS(text=text, lang='en')
+            tts.write_to_fp(audio_buffer)
 
-        # Save the audio data to the temporary file.
-        with open(temp_file_path, "wb") as temp_file:
-            temp_file.write(audio_buffer.read())
-        
-        print(f"Playing audio: '{text}'")
-        
-        # Play the audio file.
-        playsound(temp_file_path,block=True)
-        
-    except Exception as e:
-        print(f"An error occurred while playing audio: {e}")
-        
-    finally:
-        # Clean up the temporary file after playback.
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-            print("Temporary audio file removed.")
+            # To play the audio, we need to save it to a temporary file.
+            temp_file_path = os.path.join(os.path.realpath(os.path.dirname(__file__)), 'temp_audio.mp3') 
+            
+            # Rewind the buffer to the beginning.
+            audio_buffer.seek(0)
+
+            # Save the audio data to the temporary file.
+            with open(temp_file_path, "wb") as temp_file:
+                temp_file.write(audio_buffer.read())
+            
+            print(f"Playing audio: '{text}'")
+            
+            # Play the audio file.
+            playsound(temp_file_path,block=True)
+        except RequestException as e:
+            print(f"Attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                print(f"Retrying in {delay_seconds} seconds...")
+                time.sleep(delay_seconds)
+            else:
+                print("Max retries reached. Failed to convert text to speech.")
+                return False  # Indicate failure
+        except Exception as e:
+            print(f"An error occurred while playing audio: {e}")
+            
+        finally:
+            # Clean up the temporary file after playback.
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+                print("Temporary audio file removed.")
 
 
 def playback_worker():
@@ -91,19 +100,24 @@ def playback_worker():
     It continuously checks the queue and plays the audio for any queued text.
     """
     while True:
-        text_to_play = None
-        
-        # Acquire the lock to safely access the queue.
-        with queue_lock:
-            if text_queue:
-                # Pop the first item from the queue.
-                text_to_play = text_queue.pop(0)
+        try:
+            text_to_play = None
+            
+            # Acquire the lock to safely access the queue.
+            with queue_lock:
+                if text_queue:
+                    # Pop the first item from the queue.
+                    text_to_play = text_queue.pop(0)
 
-        if text_to_play:
-            play_text_to_speech(text_to_play)
-        
-        # Sleep for a short duration to prevent a busy-wait loop.
-        time.sleep(0.5)
+            if text_to_play:
+                play_text_to_speech(text_to_play)
+            
+            # Sleep for a short duration to prevent a busy-wait loop.
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"Worker thread caught an unexpected error: {e}. Exiting thread.")
+            exit(-1)
+            #break # Exit the loop if a critical, unhandled exception occurs
 
 
 def add_to_queue(text: str):
