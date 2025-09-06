@@ -60,20 +60,14 @@ def play_text_to_speech(text: str, max_retries=120, delay_seconds=30):
         try:
             # Create a gTTS object.
             tts = gTTS(text=text, lang='en')
-            tts.write_to_fp(audio_buffer)
+
 
             # To play the audio, we need to save it to a temporary file.
             temp_file_path = os.path.join(os.path.realpath(os.path.dirname(__file__)), 'temp_audio.mp3') 
-            
-            # Rewind the buffer to the beginning.
-            audio_buffer.seek(0)
 
-            # Save the audio data to the temporary file.
-            with open(temp_file_path, "wb") as temp_file:
-                temp_file.write(audio_buffer.read())
+            tts.save(temp_file_path)
             
-            print(f"Playing audio: '{text}'")
-            
+         
             # Play the audio file.
             playsound(temp_file_path,block=True)
         except RequestException as e:
