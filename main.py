@@ -1,18 +1,28 @@
 import os
 import io
+import sys
 import time
 import threading
 from gtts import gTTS
-from playsound import playsound
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from requests.exceptions import RequestException
+import logging
+from pygame import mixer
+
+
+
 
 # A global queue to hold the text strings to be spoken.
 text_queue = []
 # A lock to ensure thread-safe access to the queue.
 queue_lock = threading.Lock()
 
+# create logger with 'spam_application'
+logger = logging.getLogger("gtts.api")
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+
+mixer.init() # Initialize the pygame mixer
 
 
 # Create a FastAPI application instance.
@@ -39,7 +49,7 @@ async def queue(request: Request):
 
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logger.error(f"An error occurred: {e}")
         raise HTTPException(status_code=500, detail="An error occurred during audio generation.")
     
 
@@ -47,45 +57,46 @@ async def queue(request: Request):
 
 
 def play_text_to_speech(text: str, max_retries=120, delay_seconds=30):
-    """
-    Converts text to speech and plays the audio directly on the speaker.
 
-    Args:
-        text (str): The text to be converted and played.
-    """
-    # Use an in-memory buffer to store the audio data.
-    audio_buffer = io.BytesIO()
     for attempt in range(max_retries):
 
         try:
-            # Create a gTTS object.
+            mp3_fp = io.BytesIO() # Create an in-memory binary stream
+
+            start_time = time.perf_counter()
+  
             tts = gTTS(text=text, lang='en')
+            tts.write_to_fp(mp3_fp) # Write the audio data to the BytesIO object
+            mp3_fp.seek(0) # Rewind the stream to the beginning
+
+            end_time = time.perf_counter()
+            elapsed_time = end_time - start_time
+            logger.debug(f"gtts generation took: {elapsed_time:.4f} seconds")
+
+            speaker = mixer.Sound(mp3_fp)
+            logger.debug(f"Playing audio: {speaker.get_length()} seconds")
+
+            channel=speaker.play()
+            while channel.get_busy():
+                time.sleep(0.1)
 
 
-            # To play the audio, we need to save it to a temporary file.
-            temp_file_path = os.path.join(os.path.realpath(os.path.dirname(__file__)), 'temp_audio.mp3') 
+            return True  # Indicate success
 
-            tts.save(temp_file_path)
-            
-         
-            # Play the audio file.
-            playsound(temp_file_path,block=True)
         except RequestException as e:
-            print(f"Attempt {attempt + 1} failed: {e}")
+            logger.error(f"Attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
-                print(f"Retrying in {delay_seconds} seconds...")
+                logger.error(f"Retrying in {delay_seconds} seconds...")
                 time.sleep(delay_seconds)
             else:
-                print("Max retries reached. Failed to convert text to speech.")
+                logger.error("Max retries reached. Failed to convert text to speech.")
                 return False  # Indicate failure
         except Exception as e:
-            print(f"An error occurred while playing audio: {e}")
+            logger.critical(f"An error occurred while playing audio: {e}")
             
         finally:
-            # Clean up the temporary file after playback.
-            if os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
-                print("Temporary audio file removed.")
+            logger.debug(f"Audio playback completed.")
+                
 
 
 def playback_worker():
@@ -105,11 +116,10 @@ def playback_worker():
 
             if text_to_play:
                 play_text_to_speech(text_to_play)
-            
             # Sleep for a short duration to prevent a busy-wait loop.
             time.sleep(0.5)
         except Exception as e:
-            print(f"Worker thread caught an unexpected error: {e}. Exiting thread.")
+            logger.critical(f"Worker thread caught an unexpected error: {e}. Exiting thread.")
             exit(-1)
             #break # Exit the loop if a critical, unhandled exception occurs
 
@@ -124,7 +134,7 @@ def add_to_queue(text: str):
     # Acquire the lock to safely add a new item to the queue.
     with queue_lock:
         text_queue.append(text)
-    print(f"Added to queue: '{text}'")
+    logger.debug(f"Added to queue: '{text}'")
 
 if __name__ == "__main__":
     # Start the playback worker thread. The `daemon=True` flag
