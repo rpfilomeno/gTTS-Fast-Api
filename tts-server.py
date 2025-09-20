@@ -149,6 +149,6 @@ if __name__ == "__main__":
     # The `uvicorn.run()` function is used to start the server.
     # The `app` argument refers to the FastAPI application instance.
     # The `--reload` flag enables auto-reloading when code changes are detected.
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=7070)
 
 
