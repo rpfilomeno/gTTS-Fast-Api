@@ -32,7 +32,7 @@ mixer.init() # Initialize the pygame mixer
 # Create a FastAPI application instance.
 app = FastAPI(
     title="Text-to-Speech API",
-    description="A simple API that converts text to speech using gTTS."
+    description="A simple API that converts text to speech using Kokoro."
 )
 
 @app.post("/queue")
